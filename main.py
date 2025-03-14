@@ -9,11 +9,11 @@ import matplotlib
 import matplotlib.pyplot as pyplot
 import numpy as np
 import torch
+import wandb
 from rich import print as rprint
 from torch_geometric.loader import DataLoader
 
-import wandb
-from dataset import (ACTIONS, _get_max_length, get_bimanual_dataset_splits,
+from dataset import (ACTIONS, _get_max_length, get_coax_dataset_splits,
                      get_processing_dir)
 from models import make_model
 from utils import (Metrics, VisIndividualPreds, arg_parser, get_loss_weights,
@@ -55,8 +55,9 @@ def run_one_epoch(model: torch.nn.Module, loader: DataLoader, mode: str, epoch: 
 
         if not args.monograph:
             data = [d.to(device) for d in data]
-            gt_reordered = torch.stack([torch.cat([d.y[::2], d.y[1::2]]) for d in data], dim=0)
+            gt_reordered = torch.stack([d.y for d in data], dim=0)
         else:
+            raise NotImplementedError("Monograph is not implemented")
             batch_size = data.y.shape[0] // args.temporal_length
             data = data.to(device)
             gt_reordered = torch.cat([data.y[:,0,:].reshape(batch_size, args.temporal_length, len(ACTIONS)).permute(1, 0, 2), 
@@ -206,7 +207,7 @@ if __name__ == "__main__":
                tags=tags)
 
 
-    train_set, test_set, val_set = get_bimanual_dataset_splits(root=args.root, 
+    train_set, test_set, val_set = get_coax_dataset_splits(root=args.root, 
                                                                process_it_anyway=args.process_it,
                                                                test_subject=args.test_subject,
                                                                validation_take=args.validation_take,
@@ -299,8 +300,7 @@ if __name__ == "__main__":
     # Load saved models if required
     if args.restore is not None:
         assert args.restored_name is not None, "restored_name must be provided if restore is not None"
-        checkpoint = torch.load(opj("saved_models", f"{args.restored_name}", f"model_epoch{args.restore:0>4}.pt"))
-
+        checkpoint = torch.load(opj(f"saved_{args.restored_name}", f"model_epoch{args.restore:0>4}.pt"))
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         model.load_state_dict(checkpoint["model_state_dict"])
         scheduler.load_state_dict(checkpoint["scheduler_state_dict"])

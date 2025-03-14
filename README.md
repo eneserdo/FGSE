@@ -1,5 +1,7 @@
 # Real-Time Manipulation Action Recognition with a Factorized Graph Sequence Encoder
 
+(The CoAx branch)
+
 Work in progress...
 
 ## Environment
@@ -25,16 +27,16 @@ pip install enlighten natsort wandb torchmetrics matplotlib seaborn gdown
 For data preparation run:
 
 ```bash
-# Assuming it is the first time you run the code, if not, omit unzip_anyway, fix_null and fix_fps flags
-python prepare_dataset.py -tl 25 -ds 3 --unzip_anyway --fix_fps --fix_null
+# Assuming it is the first time you run the code, if not, omit unzip_anyway
+python prepare_dataset.py -tl 40 -ds 1 --unzip_anyway
 ```
 
-Note that this will create data with W=75 and D=3.
+Note that this will create data with W=40 and D=1.
 
 For training run:
 
 ```bash
-python cross_validation.py -lr 0.001 -wd 0.0005 -me 40 --scheduler_step_size 8 --saving_freq 2 --name F25_L -tl 25 --downsample 3 --merged_pred late --temporal_type tr --norm_layer LayerNorm --edge_dropout 0.15 --weighted_mv auto --dist_threshold 0.4
+python cross_validation.py -lr 0.001 -wd 0.0005 -me 60 --scheduler_step_size -1 --saving_freq 2 --name NCF40d1_pl_dr30 -tl 40 --downsample 1 --merged_pred late --temporal_type tr --norm_layer LayerNorm --edge_dropout 0.30 --weighted_mv auto --disable_wandb
 ```
 
 

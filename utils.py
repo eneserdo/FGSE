@@ -5,7 +5,9 @@ import os
 import random
 import shutil
 import warnings
+from math import ceil
 from os.path import join as opj
+from typing import List
 
 import matplotlib.pyplot as plt
 import natsort
@@ -22,11 +24,14 @@ except AttributeError:
     import functorch
     torch_vmap = functorch.vmap
 
+from collections import Counter
+
+from scipy.optimize import linear_sum_assignment
 
 from dataset import ACTIONS
 from metrics import f1_at_k_single_example
 from visualization_utils import (plot_segmentation, plot_segmentation_partial,
-                                 plot_segmentation_v2, plot_segmentation_v3)
+                                 plot_segmentation_v2)
 
 plt.ioff()
 
@@ -35,7 +40,7 @@ def arg_parser_base():
     ap = argparse.ArgumentParser()
 
     # Dataset
-    ap.add_argument("-rt", "--root", type=str, default='.', help="Root directory of dataset.")
+    ap.add_argument("-rt", "--root", type=str, default='./coax', help="Root directory of dataset.")
     ap.add_argument("-p", "--process_it", action="store_true", help="...")
     ap.add_argument("-bs", "--batch_size", type=int, default=256, help="...")
     ap.add_argument("-tl", "--temporal_length", type=int, default=10, help="...")
@@ -137,6 +142,106 @@ def arg_parser_cv():
     return ap.parse_args()
 
 
+# def arg_parser_viz_attn():
+#     ap = argparse.ArgumentParser()
+
+#     # Dataset
+#     ap.add_argument("-rt", "--root", type=str, default='.', help="Root directory of dataset.")
+#     ap.add_argument("-p", "--process_it", action="store_true", help="...")
+#     ap.add_argument("-tl", "--temporal_length", type=int, default=10, help="...")
+#     ap.add_argument("-ts", "--test_subject", type=int, default=1, choices=[1, 2, 3, 4, 5, 6], help="...")
+#     ap.add_argument("-vt", "--validation_take", type=int, default=7, choices=[i for i in range(10)], help="...")
+#     ap.add_argument("--downsample", type=int, default=1, help="Downsampling ratio")
+#     ap.add_argument("--use_vf", action="store_true", help="use visual features")
+#     ap.add_argument("--monograph", action="store_true", help="use monograph")
+
+#     # Model - GNN part
+#     ap.add_argument("-g", "--gnn_type", type=str, default="TransformerConv",
+#                     choices=["NNConv", "GATConv", "TransformerConv", "GATv2Conv"], help="...")
+#     ap.add_argument("-hc", "--hidden_channels", type=int, default=64, help="...")
+#     ap.add_argument("-oc", "--out_channels", type=int, default=64, help="...")
+#     ap.add_argument("-nh", "--num_heads", type=int, default=2, help="...")
+#     ap.add_argument("-nl", "--num_layers", type=int, default=2, help="...")
+#     ap.add_argument("--use_global_pooling", action="store_true", help="...")    # :(
+#     ap.add_argument("--edge_dropout", type=float, default=0.0, help="...")
+#     ap.add_argument("--dropout", type=float, default=0.0, help="...")
+#     ap.add_argument("--norm_layer", type=str, default="LayerNorm", choices=["BatchNorm", "InstanceNorm", "LayerNorm", "GraphNorm", "PairNorm", "none"], help="Normalization  for GNN layer")
+#     ap.add_argument("--use_pos", action="store_true", help="Use positions too as node features")
+#     ap.add_argument("--use_embedding", action="store_true", help="Instead of one-hot encoded node features, use embedding layer")
+    
+
+#     # Model - Temporal part
+#     ap.add_argument("--dropout_tr", type=float, default=0.1, help="...")
+#     ap.add_argument("-hs", "--lstm_hidden_size", type=int, default=128, help="...")
+#     ap.add_argument("--temporal_type", type=str, default="tr", choices=["lstm", "bi", "tr", "edtr", "none"], help="...")
+#     ap.add_argument("--norm_first", action="store_true", help="To make norm_first=true in TransformerEncoderLayer")
+#     ap.add_argument("--pos_enc", type=str, default="original", choices=["original", "learnable", "none"], help="Type of positional encoding")
+#     ap.add_argument("--num_heads_tr", type=int, default=4, help="...")
+#     ap.add_argument("--num_of_temp_layers", type=int, default=2, help="...")
+    
+#     # Model - Others
+#     ap.add_argument("--dim_feedforward", type=int, default=0, help="transformer encoder layer's dim_feedforward, if 0, it is set to lstm_hidden_size//4*3")
+#     ap.add_argument("--merged_pred", type=str, default="none", choices=["early", "late", "none", "attention"], help="Merge hands predictions")
+
+
+#     # Others
+#     ap.add_argument("--gpu_id", type=int, default=0, help="...")
+#     ap.add_argument("--seed", type=int, default=34, help="...")
+    
+#     # save_dir
+#     ap.add_argument("--save_dir", default="debug", type=str, help="...")  # , default="raw"
+    
+#     # model_path
+#     ap.add_argument("--model_path", type=str, default=None, help="...")
+
+#     # discard_ratio
+#     ap.add_argument("--discard_ratio", type=float, default=0.1, help="...")
+
+#     # fuse method
+#     ap.add_argument("--fuse_method", type=str, default="mean", choices=["mean", "min", "max"], help="...")    
+
+#     args = ap.parse_args()
+#     args.return_attention = True
+#     args.filter_idle_hold = False
+
+#     return args 
+
+# def arg_parser_inference():
+#     ap = argparse.ArgumentParser()
+        
+#     ap.add_argument("--raw_dir", default="raw", type=str, help="...") 
+#     ap.add_argument("--save_dir", default="tests", type=str, help="...")  # , default="raw"
+
+#     ap.add_argument("-s", "--test_subject", type=int, required=True, help="...") 
+#     # ap.add_argument("-gt", "--ground_truth_path", help="...")
+    
+#     ap.add_argument("-tl", "--temporal_length", type=int, default=10, help="...")
+#     ap.add_argument("-bs", "--batch_size", type=int, default=256, help="...")
+
+#     # Model
+#     ap.add_argument("-g", "--gnn_type", type=str, required=True, choices=["NNConv", "GATConv", "TransformerConv", "GATv2Conv"], help="...")
+#     ap.add_argument("--temporal_type", type=str, default="lstm", choices=["lstm", "bi", "tr"], help="...")
+#     ap.add_argument("-hc", "--hidden_channels", type=int, default=64, help="...")
+#     ap.add_argument("-oc", "--out_channels", type=int, default=64, help="...")
+#     ap.add_argument("-hs", "--lstm_hidden_size", type=int, default=128, help="...")
+#     ap.add_argument("-nh", "--num_heads", type=int, default=2, help="...")
+#     ap.add_argument("--saving_freq", type=int, default=5, help="...")
+#     ap.add_argument("-nbn", "--no_bn", action="store_true", help="...")
+#     ap.add_argument("--use_global_pooling", action="store_true", help="...")
+#     ap.add_argument("--edge_dropout", type=float, default=0.0, help="...")
+#     ap.add_argument("--dropout", type=float, default=0.0, help="...")
+#     ap.add_argument("--use_cls_token", action="store_true", help="Use class token in transformer")
+
+
+#     # Restore
+#     ap.add_argument("-r", "--restore", type=int, required=True, help="...")
+#     ap.add_argument("-rn", "--restored_name", type=str, required=True, help="...")
+#     ap.add_argument("-fih", "--filter_idle_hold", action="store_true", help="...")
+
+#     return ap.parse_args()
+
+
+
 
 def get_minutes(elapsed) -> str:
     return f"{round((elapsed) // 60)}.{round((elapsed) % 60)}"
@@ -185,10 +290,24 @@ def plot_line(line, name, do_save=False, do_return_plot=False):
         plt.close()
 
 
+def create_ground_truth_segments(label_series):
+    change_occurring = torch.concat([label_series[1:] - label_series[:-1], torch.zeros(size=(1, label_series.shape[-1]), device=label_series.device)], dim=0)
+    return torch.where(change_occurring != 0, 1.0, 0.0) # Should this be of shape [N, B, 2] instead of [N, B*2]
+
+
 def seed_worker(worker_id):
     worker_seed = torch.initial_seed() % 2 ** 32
     np.random.seed(worker_seed)
     random.seed(worker_seed)
+
+def flatten_seq(x):
+        """
+            input:
+                x -> tensor of shape (n, b*2, f)
+            output:
+                y -> flattened tensor of shape (n*b*2, f)
+        """
+        return torch.flatten(torch.transpose(x, 0, 1), start_dim=0, end_dim=1)
 
 def get_filters_for_imbalance(dataBatchList):
     """ 2 out of 3 samples for the actions idle and hold were discarded """
@@ -254,6 +373,51 @@ def debug_fih(dataBatchList, b):
     print("")
 
 
+def print_non_uniform_ys(dataBatchList):
+    bs = dataBatchList[0].y.shape[0]
+    for b in range(bs):
+        act = torch.argmax(dataBatchList[0].y[b]).item()
+        for i in range(10):
+            if act != torch.argmax(dataBatchList[i].y[b]).item():
+                print("b id: ", b)
+                debug_fih(dataBatchList, b)
+                break
+
+
+def debug_align(device="cpu"):
+    mask = torch.full((4, 3), True)
+    mask[0, 0] = False
+    mask[2, 2] = False
+    mask[3, 0] = False
+    mask[3, 1] = False
+
+    # print("mask:\n", mask)
+
+    x = torch.arange(12).reshape(4, 3, 1)
+    x = x.repeat(1, 1, 2)
+    x[~mask] = 0
+
+    x = x.to(device)
+    mask = mask.to(device)
+
+    # t=4, bs=3, emb_size=2
+
+    # print("x:\n", x)
+    # print("x[:, :, 0]:\n", x[:, :, 0])
+
+    # y = align_embeddings_to_right(x, mask)
+    emd_size = x.shape[2]
+    mask = mask[:, :, None]
+
+    # Somehow when it is on gpu it gives wrong values
+    index = torch.sort(~mask.repeat(1, 1, emd_size).to(x.device) * 1, dim=0, descending=True)[1]
+    y = x.gather(0, index)
+
+    # print("y[:, :, 0]:\n", y[:, :, 0])
+
+    return x, y, index, mask
+
+
 def get_relations(base_dir, subject, task, take, i):
     """ Returns a set for relations in the frame """
 
@@ -301,6 +465,7 @@ def visualize_incorrect_preds(preds, labels, idxes, test_idx_sample_mapping, gra
     assert os.path.exists(rgb_dataset_dir), "RGB dataset directory does not exist"
     assert os.path.exists(graph_dataset_dir), "Graph dataset directory does not exist"
 
+    raise NotImplementedError("Not implemented")
     save_dir_name = "incorrect_predictions"
     # if os.path.exists(save_dir_name):
     # print("Removing existing", save_dir_name)
@@ -341,6 +506,128 @@ def visualize_incorrect_preds(preds, labels, idxes, test_idx_sample_mapping, gra
 
                 prev_relations = curr_relations
 
+def calculate_boundaries(arr):
+    """ Sparse array to dense boundaries """
+
+    id_changes = torch.where(arr ==1)[0]
+    boundaries = torch.zeros((len(id_changes), 2), dtype=torch.int32)
+
+    boundaries[1:, 0] = id_changes[:-1]+1
+    boundaries[:, 1] = id_changes
+
+    return boundaries
+
+
+def calc_cost_matrix_single(gt_seg, pred_seg):
+    """ Calculates cost matrix using hungarian algorithm for single example """
+    # old:
+    # gt_seg_pseudo_label=np.cumsum(gt_seg)
+    # pred_seg_pseudo_label=np.cumsum(pred_seg)
+
+    # stacked=np.stack((gt_seg_pseudo_label, pred_seg_pseudo_label), axis=1)
+    # stacked = stacked.tolist()
+    # stacked= [tuple(s) for s in stacked]
+    # cntr=Counter(stacked)
+    # m=sparse.csc_matrix((list(cntr.values()), list(cntr.keys())))
+    # return m.toarray()
+    # new: 
+    # TODO add assert for gt_seg and pred_seg shapes 
+    ground_truth_boundaries = calculate_boundaries(gt_seg)
+    predicted_boundaries = calculate_boundaries(pred_seg)
+    
+    cost_matrix = torch.zeros((len(ground_truth_boundaries), len(predicted_boundaries)))
+
+    for i, (gt_start, gt_end) in enumerate(ground_truth_boundaries):
+        for j, (p_start, p_end) in enumerate(predicted_boundaries):
+
+            # it is already passed
+            # g: [+---+      ]
+            # p: [       +--+]
+            if gt_end < p_start:
+                break
+
+            # it is not reached yet
+            # g: [       +--+]
+            # p: [+---+      ]
+            elif p_end < gt_start:
+                continue
+
+            # g: [ +----------+  ]
+            # p: [    +---+      ]
+            elif gt_start <= p_start and p_end <= gt_end:
+                # cost_matrix[i, j] = p_end - p_start + 1
+                cost_matrix[i, j] = (p_end - p_start + 1) / (gt_end - gt_start + 1)
+            
+            # g: [    +---+      ]
+            # p: [ +----------+  ]
+            elif p_start <= gt_start and gt_end <= p_end:
+                # cost_matrix[i, j] = gt_end - gt_start + 1
+                cost_matrix[i, j] = (gt_end - gt_start + 1) / (p_end - p_start + 1)
+            
+            # g: [   +--------+   ]
+            # p: [ +----+         ]
+            # or
+            # g: [ +----+         ]
+            # p: [   +--------+   ] 
+            else:
+                arg1 = p_end - gt_start + 1
+                arg2 = gt_end - p_start + 1
+                assert arg1 > 0 and arg2 > 0, "arg1 and arg2 must be positive"
+                # cost_matrix[i, j] = min(max(arg1, 0), max(arg2, 0)) 
+                cost_temp = arg1/arg2 if arg1 < arg2 else arg2/arg1
+    
+    return cost_matrix, ground_truth_boundaries, predicted_boundaries
+    
+
+def assign_seg_labels_single(cost_matrix, gt_seg_labels, gt_boundaries, pred_boundaries):
+    """ Assigns ground truth segment labels to predicted unknown segments for single example """
+
+    row_ind, col_ind = linear_sum_assignment(cost_matrix, maximize=True)
+
+    pred_seg_labels = torch.zeros_like(gt_seg_labels)
+
+    for i, j in zip(row_ind, col_ind):
+        label_loc, _ = gt_boundaries[i]
+        label = gt_seg_labels[label_loc]
+        start, end = pred_boundaries[j]
+        pred_seg_labels[start:end] = label
+
+    return pred_seg_labels
+
+
+def assign_seg_labels(gt_seg_labels, gt_seg, pred_seg):
+    """ Assigns ground truth segment labels to predicted unknown segments """
+    # gt_seg_labels: [T, B, C]
+    # gt_seg: [T, B] (ones and zeros, ones indicate segment endings)
+    # pred_seg: [T, B] (ones and zeros, ones indicate segment endings)
+    assert gt_seg_labels.shape[:2] == gt_seg.shape == pred_seg.shape, "Shapes must be equal"
+
+    # calculate cost matrix
+    gt_seg_labels = gt_seg_labels.argmax(axis=2)
+    pred_seg = pred_seg > 0.5
+    
+    # FIXME: this is a hack to make sure that the last frame is always a segment ending
+    gt_seg[-1, :] = 1
+    pred_seg[-1, :] = 1
+    
+    batch_size=gt_seg.shape[1]
+    pred_seg_labels = torch.zeros_like(gt_seg_labels)
+
+    for b_id in range(batch_size):
+        gt_seg_labels_b = gt_seg_labels[:, b_id]
+        gt_seg_b = gt_seg[:, b_id]
+        pred_seg_b = pred_seg[:, b_id]
+
+        # calculate cost matrix
+        cost_matrix, gt_boundaries, pred_boundaries = calc_cost_matrix_single(gt_seg_b, pred_seg_b)
+
+        # apply hungarian algorithm
+        # assign labels to unknown segments
+        pred_seg_labels_b = assign_seg_labels_single(cost_matrix, gt_seg_labels_b, gt_boundaries, pred_boundaries)
+        pred_seg_labels[:, b_id] = pred_seg_labels_b
+
+    return pred_seg_labels
+
 
 class F1_at_k:
     # Very custom class for calculating f1@k
@@ -355,7 +642,9 @@ class F1_at_k:
 
         
     def __call__(self, y_true, y_pred, segment_name = None):
-         
+
+        if len(y_pred.shape) == 1:
+            y_pred = y_pred.reshape(-1, 1)
         assert y_true.shape == y_pred.shape, "y_true and y_pred must have same shape"
         
         if self.batch_mode:
@@ -365,9 +654,9 @@ class F1_at_k:
                 self.k_50.append(f1_at_k_single_example(y_t, y_p, num_classes=self.num_classes, overlap=0.5))
 
         else:
-            self.k_10.append(f1_at_k_single_example(y_true, y_pred, num_classes=self.num_classes, overlap=0.1))
-            self.k_25.append(f1_at_k_single_example(y_true, y_pred, num_classes=self.num_classes, overlap=0.25))
-            self.k_50.append(f1_at_k_single_example(y_true, y_pred, num_classes=self.num_classes, overlap=0.5))
+            self.k_10.append(f1_at_k_single_example(y_true[:, 0], y_pred[:, 0], num_classes=self.num_classes, overlap=0.1))
+            self.k_25.append(f1_at_k_single_example(y_true[:, 0], y_pred[:, 0], num_classes=self.num_classes, overlap=0.25))
+            self.k_50.append(f1_at_k_single_example(y_true[:, 0], y_pred[:, 0], num_classes=self.num_classes, overlap=0.5))
 
     def compute(self):
         return np.mean(self.k_10), np.mean(self.k_25), np.mean(self.k_50)
@@ -470,26 +759,25 @@ def test_majority_voting():
 
 
 def combine_predictions(all_arr, idx, sub_arr, mapping):
-    # first half of sub_arr is for left hand, second half is for right hand
+    # sub_arr is right hand predictions
     
     batch_size = sub_arr.shape[1]
-    assert 2*len(idx) == batch_size, f"2*idx and sub_arr must have same shape: {2*len(idx)} != {batch_size}"
+    assert len(idx) == batch_size, f"2*idx and sub_arr must have same shape: {len(idx)} != {batch_size}"
 
-    left_arr , right_arr = sub_arr[:, :batch_size//2], sub_arr[:, batch_size//2:]
+    right_arr = sub_arr
 
-    for half_arr, hand in zip([left_arr, right_arr], ["L", "R"]):
-        for j in range(len(idx)):
-            p = half_arr[:, j]
-            i = idx[j]
+    for j in range(len(idx)):
+        p = right_arr[:, j]
+        i = idx[j]
 
-            subject, task, take, start_frame, end_frame, is_mirrored = mapping[i]
+        subject, task, take, start_frame, end_frame = mapping[i]
 
-            # end frame exclusive i.e. [start_frame, end_frame)
-            temp_len = end_frame-start_frame
+        # end frame exclusive i.e. [start_frame, end_frame)
+        temp_len = end_frame-start_frame
 
-            assert np.all(all_arr[f"{subject}{task}{take}{is_mirrored}{hand}"][temp_len * start_frame : temp_len * (1+start_frame)] == -1), "Not filled appropriately. There should not be any value in all_arr"
-            all_arr[f"{subject}{task}{take}{is_mirrored}{hand}"][temp_len * start_frame : temp_len * (1+start_frame)] = p
-    
+        assert np.all(all_arr[f"{subject}{task}{take}"][temp_len * start_frame : temp_len * (1+start_frame)] == -1), "Not filled appropriately. There should not be any value in all_arr"
+        all_arr[f"{subject}{task}{take}"][temp_len * start_frame : temp_len * (1+start_frame)] = p
+
     return all_arr
 
 def calc_metrics_at_once(all_arr, mapping, num_classes, temporal_length, downsample, weighted_mv, save_dir=None):
@@ -508,93 +796,50 @@ def calc_metrics_at_once(all_arr, mapping, num_classes, temporal_length, downsam
             shutil.rmtree(save_dir)
         os.makedirs(save_dir)
 
-    for video_id, y_true_LR in mapping.items():
-
-        y_true_L, y_true_R = y_true_LR[:, 0], y_true_LR[:, 1]  
+    for video_id, y_true in mapping.items():
         
-        y_pred__L_all = all_arr[f"{video_id}_L"]
-        y_pred__R_all = all_arr[f"{video_id}_R"]
-        y_pred_ML_all = all_arr[f"{video_id}ML"]
-        y_pred_MR_all = all_arr[f"{video_id}MR"]
+        y_pred_all = all_arr[video_id]
 
-        for y_pred_ in [y_pred__L_all, y_pred__R_all, y_pred_ML_all, y_pred_MR_all]:
-            assert -1 not in y_pred_, "Not filled appropriately. There should not be -1 in y_pred"
+        assert -1 not in y_pred_all, "Not filled appropriately. There should not be -1 in y_pred"
 
         try:
-            y_pred__L, conf_L = majority_voting(y_pred__L_all, total_len=y_true_L[::downsample].shape[0], buffer_len=temporal_length, weighted=weighted_mv)
-            y_pred__R, conf_R = majority_voting(y_pred__R_all, total_len=y_true_R[::downsample].shape[0], buffer_len=temporal_length, weighted=weighted_mv)
-            y_pred_ML, conf_ML = majority_voting(y_pred_ML_all, total_len=y_true_L[::downsample].shape[0], buffer_len=temporal_length, weighted=weighted_mv)
-            y_pred_MR, conf_MR = majority_voting(y_pred_MR_all, total_len=y_true_R[::downsample].shape[0], buffer_len=temporal_length, weighted=weighted_mv)
+            y_pred, conf = majority_voting(y_pred_all, total_len=y_true[::downsample].shape[0], buffer_len=temporal_length, weighted=weighted_mv)
         except Exception as e:
             raise ValueError(f"Majority voting failed, {video_id}", e)
             
         
-        y_pred__L = y_pred__L.repeat(downsample)
-        y_pred__R = y_pred__R.repeat(downsample)
-        y_pred_ML = y_pred_ML.repeat(downsample)
-        y_pred_MR = y_pred_MR.repeat(downsample)
+        y_pred = y_pred.repeat(downsample)
 
-        conf_L = conf_L.repeat(downsample)
-        conf_R = conf_R.repeat(downsample)
-        conf_ML = conf_ML.repeat(downsample)
-        conf_MR = conf_MR.repeat(downsample)
-
-        pred_len = y_pred__L.shape[0]
-        gt_len = y_true_L.shape[0]
+        pred_len = y_pred.shape[0]
+        gt_len = y_true.shape[0]
 
         if pred_len - gt_len <= downsample:
-            y_pred__L = y_pred__L[:gt_len]
-            y_pred__R = y_pred__R[:gt_len]
-            y_pred_ML = y_pred_ML[:gt_len]
-            y_pred_MR = y_pred_MR[:gt_len]
-            conf_L = conf_L[:gt_len]
-            conf_R = conf_R[:gt_len]
-            conf_ML = conf_ML[:gt_len]
-            conf_MR = conf_MR[:gt_len]
+            y_pred = y_pred[:gt_len]
         elif gt_len - pred_len < downsample:
-            y_true_L = y_true_L[:pred_len]
-            y_true_R = y_true_R[:pred_len]
+            y_true = y_true[:pred_len]
         else:
             raise ValueError("gt_len and pred_len must be equal or differ at most by downsample", gt_len, pred_len, video_id)
         
         
-
-
-
         # Notice that the convention is (y_true, y_pred)
-        f1_at_k(y_true_L, y_pred__L)
-        f1_at_k(y_true_R, y_pred__R)
-        
-        # Mirrored data
-        f1_at_k(y_true_R, y_pred_ML)
-        f1_at_k(y_true_L, y_pred_MR)
-        
-        
-        # Notice that the convention is (y_pred, y_true)
-        f1_classic(torch.tensor(y_pred__L), torch.tensor(y_true_L))
-        f1_classic(torch.tensor(y_pred__R), torch.tensor(y_true_R))
-        f1_classic(torch.tensor(y_pred_ML), torch.tensor(y_true_R))
-        f1_classic(torch.tensor(y_pred_MR), torch.tensor(y_true_L))
+        f1_at_k(y_true, y_pred)
 
-        f1_micro(torch.tensor(y_pred__L), torch.tensor(y_true_L))
-        f1_micro(torch.tensor(y_pred__R), torch.tensor(y_true_R))
-        f1_micro(torch.tensor(y_pred_ML), torch.tensor(y_true_R))
-        f1_micro(torch.tensor(y_pred_MR), torch.tensor(y_true_L))
+        y_pred = y_pred.reshape(*y_true.shape)
+        # Notice that the convention is (y_pred, y_true)
+        f1_classic(torch.tensor(y_pred), torch.tensor(y_true))
+
+        f1_micro(torch.tensor(y_pred), torch.tensor(y_true))
 
         # Conf mat
         # To ignore warnings about nan values in confusion matrix and functorch's performance drop
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', '.*NaN values found in confusion matrix.*', UserWarning)
 
-            conf_mat(torch.tensor(y_pred__L), torch.tensor(y_true_L))
-            conf_mat(torch.tensor(y_pred__R), torch.tensor(y_true_R))
-            conf_mat(torch.tensor(y_pred_ML), torch.tensor(y_true_R))
-            conf_mat(torch.tensor(y_pred_MR), torch.tensor(y_true_L))
-        
+            conf_mat(torch.tensor(y_pred), torch.tensor(y_true))
         
         # Visualization
         if save_dir is not None:
-            plot_segmentation_v3(y_true_L, y_pred__L, conf_L, y_true_R, y_pred__R, conf_R, save_file=opj(save_dir, video_id + ".png"), title=f"Overall Output for subject {video_id[0]}, task {video_id[1]}, take {video_id[2]}")
+            plot_segmentation_v2(y_true, y_pred, conf, save_file=opj(save_dir, video_id + ".png"), title=video_id)
 
     # f1_at_10, f1_at_25, f1_at_50, f1_top1_mv, cm_top1_mv
     f1_at_10, f1_at_25, f1_at_50 = f1_at_k.compute()
@@ -614,6 +859,7 @@ def metrics_to_str(metrics):
     return " ".join([f"{k}: {v:.4f}" for k, v in metrics.items() if k in selected])
     # return " ".join([f"{k}: {v:.4f}" for k, v in metrics.items() if "cm" not in k])
 
+    
 
 class VisIndividualPreds:
     def __init__(self, num_of_samples, training_len, val_len, save_dir) -> None:
@@ -679,6 +925,7 @@ class VisIndividualPreds:
                 plot_segmentation_partial(self.segments_pred[mode][s_idx], self.segments_gt[mode][s_idx], self.save_dir, f"{mode}_{s_idx}")
 
 
+
 def print_warning(text, color=(230, 50, 10)):
     print(f"\033[38;2;{color[0]};{color[1]};{color[2]}m{text} \033[38;2;255;255;255m")
  
@@ -727,7 +974,6 @@ class Metrics:
         # Window-location-sensitive
         if temporal_length != -1:
             self.win_f1_calc_top1 = [MulticlassF1Score(num_classes=num_classes, top_k=1, average="macro").to(device) for _ in range(temporal_length)]
-            self.win_f1_calc_top1_micro = [MulticlassF1Score(num_classes=num_classes, top_k=1, average="micro").to(device) for _ in range(temporal_length)]
             self.win_f1_calc_top3 = [MulticlassF1Score(num_classes=num_classes, top_k=1, average="macro").to(device) for _ in range(temporal_length)]
 
 
@@ -735,8 +981,8 @@ class Metrics:
         # Dictionaries to store predictions for each sample
         # We will also calculate F1 and CM after MV
         if temporal_length != -1:
-            self.all_predictions_combined_top1 = {vid + m_and_hand_status: - np.ones((act[::downsample].shape[0] - temporal_length + 1) * temporal_length) for vid, act in dataset_mapping[mode]["vid"].items() for m_and_hand_status in ["_L", "_R", "ML", "MR"]}
-            self.all_predictions_combined_top3 = {vid + m_and_hand_status: - np.ones((act[::downsample].shape[0] - temporal_length + 1) * temporal_length) for vid, act in dataset_mapping[mode]["vid"].items() for m_and_hand_status in ["_L", "_R", "ML", "MR"]}
+            self.all_predictions_combined_top1 = {vid: - np.ones((act[::downsample].shape[0] - temporal_length + 1) * temporal_length) for vid, act in dataset_mapping[mode]["vid"].items()}
+            self.all_predictions_combined_top3 = {vid: - np.ones((act[::downsample].shape[0] - temporal_length + 1) * temporal_length) for vid, act in dataset_mapping[mode]["vid"].items()}
         else:
             self.f1_at_k = F1_at_k(num_classes=num_classes)
 
@@ -781,7 +1027,7 @@ class Metrics:
             for i in range(self.temporal_length):
                 self.win_f1_calc_top1[i](pred_top_1_unf[i, :], gt[i])
                 self.win_f1_calc_top3[i](pred_top_3_unf[i, :], gt[i])
-                self.win_f1_calc_top1_micro[i](pred_top_1_unf[i, :], gt[i])
+
             # These are expects non-flattened tensors
             combine_predictions(self.all_predictions_combined_top1, idxes.numpy(), pred_top_1_unf.cpu(), self.dataset_mapping[self.mode]["sample"])
             combine_predictions(self.all_predictions_combined_top3, idxes.numpy(), pred_top_3_unf.cpu(), self.dataset_mapping[self.mode]["sample"])
@@ -812,7 +1058,6 @@ class Metrics:
 
             self.win_f1_calc_top1_results = [f1_calc.compute().item() for f1_calc in self.win_f1_calc_top1]
             self.win_f1_calc_top3_results = [f1_calc.compute().item() for f1_calc in self.win_f1_calc_top3]
-            self.win_f1_calc_top1_micro_results = [f1_calc.compute().item() for f1_calc in self.win_f1_calc_top1_micro]
 
             ret = {
                 "f1_top1": self.f1_top1.compute().item(),
@@ -829,7 +1074,6 @@ class Metrics:
                 "f1@50": metrics_top1["f1_at_50"],
                 "win_f1_top1": self.win_f1_calc_top1_results,
                 "win_f1_top3": self.win_f1_calc_top3_results,
-                "win_f1_top1_micro": self.win_f1_calc_top1_micro_results,
             }
         else:
             ret = {
@@ -886,6 +1130,81 @@ def wandb_logging(wandb, metric_dict, epoch, mode, whole_mode=False):
         plt3 = plot_conf_mat(metric_dict["cm_top3_once"], f"{mode}_CM_top3_e{epoch:0>4}", do_return_plot=True)
         wandb.log({f"{mode}/confusion_matrix": {'top3': wandb.Image(plt3)}})
         plt3.close()
+
+import torch_geometric.nn as g_nn
+from torch_geometric.data import Batch
+
+ATTENTION = {}
+def set_hooks_for_dist_loss(model):
+    def make_hook_fn(name):
+        def hook(module, input, output):
+            assert isinstance(module, g_nn.TransformerConv)
+
+            edge_indicies, attn = output[1]
+            # attn: num_edges x num_heads
+            # edge_indicies: 2 x num_edges
+            # edge_indicies[:, i]: [source, target] of the i-th edge
+            # sum of attentions to target is 1
+
+            ATTENTION[name].append(attn)
+
+            if name == "g_layer_0":
+                ATTENTION["edge_indicies"].append(edge_indicies.detach().cpu())
+
+            # Just to be sure
+            # if name == "g_layer_1":
+                # assert torch.all(edge_indicies.cpu() == ATTENTION["edge_indicies"][])
+
+        return hook
+
+    for i in range(len(model.gnn.gnn) // 3):
+        j = 3 * i
+        layer_name = f"g_layer_{i}"
+        getattr(model.gnn.gnn, f"module_{j}").register_forward_hook(make_hook_fn(layer_name))
+        ATTENTION[layer_name] = []
+    
+    ATTENTION["edge_indicies"] = []
+
+
+def get_dists_btw_obj(graph_batch: Batch):
+    list_of_graphs = graph_batch.to_data_list()
+    dists = []
+    for graph in list_of_graphs:
+        for edge in graph.edge_index.T:
+            pos1 = graph.pos[edge[0]]
+            pos2 = graph.pos[edge[1]]
+            dists.append(torch.dist(pos1, pos2))
+            
+    dists = torch.tensor(dists)    
+    return dists
+
+# def get_attn_dist_loss(graph_list: List[Batch]):
+#     # Read attentions.
+#     # Calculate the distance between objects.
+#     assert len(ATTENTION["edge_indicies"]) == len(ATTENTION["g_layer_0"]) == len(ATTENTION["g_layer_1"]) == 10
+
+#     for graph_batch in graph_list: # temporal
+#         list_of_graphs = graph_batch.to_data_list()
+#         for graph in list_of_graphs:
+#             dists = []
+#             for edge_idx, edge in enumerate(graph.edge_index.T):
+#                 pos1 = graph.pos[edge[0]]
+#                 pos2 = graph.pos[edge[1]]
+#                 dists.append(torch.dist(pos1, pos2))
+            
+#             dists = torch.tensor(dists)
+#             graph.dists = dists
+#             # graph-wise normalize the distances
+        
+#         batch = Batch.from_data_list(list_of_graphs)
+
+#         attns = ...
+            
+#         # define a loss 
+            
+
+#     # graphList-> to list of graphs 
+#     ...
 
 
 if __name__ == "__main__":
