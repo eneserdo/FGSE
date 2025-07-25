@@ -1,6 +1,10 @@
 # Real-Time Manipulation Action Recognition with a Factorized Graph Sequence Encoder
+<img width="525" height="270" alt="image" src="https://github.com/user-attachments/assets/cb5bb7dc-8ba3-4582-9577-718ad771e04b" />
 
-Work in progress...
+
+[[Arxiv version](https://arxiv.org/abs/2503.12034)]
+
+**Our work has been accepted to IEEE/RSJ IROS 2025** 🎉
 
 ## Environment
 
@@ -19,7 +23,6 @@ pip install enlighten natsort wandb torchmetrics matplotlib seaborn gdown
 
 ```
 
-
 ## Training
 
 For data preparation run:
@@ -37,7 +40,12 @@ For training run:
 python cross_validation.py -lr 0.001 -wd 0.0005 -me 40 --scheduler_step_size 8 --saving_freq 2 --name F25_L -tl 25 --downsample 3 --merged_pred late --temporal_type tr --norm_layer LayerNorm --edge_dropout 0.15 --weighted_mv auto --dist_threshold 0.4 --disable_wandb
 ```
 
-
 ## Trained Models
 
-Once uploaded, the models will be available at [google drive](https://drive.google.com/drive/folders/1ZJvG4AOasR46GUYNy8NLmVYhsE7wUj3C)
+The model weights are available at [google drive](https://drive.google.com/drive/folders/1ZJvG4AOasR46GUYNy8NLmVYhsE7wUj3C)
+
+## Example Test Result
+
+An example test result of our action recognition model, FGSE, on an unseen video recorded in our lab. Note that this is an HRC concept video, which means the robot was teleoperated.
+
+https://github.com/user-attachments/assets/02116f53-a9e0-4ed1-b416-4e6fb8444d69
