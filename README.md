@@ -6,6 +6,9 @@
 
 **Our work has been accepted to IEEE/RSJ IROS 2025** 🎉
 
+## Our IROS Poster for Quick Overview
+<img width="3179" height="4494" alt="FGSE-Poster-v4" src="https://github.com/user-attachments/assets/910e837f-b371-4a92-8abe-27785fea1e1e" />
+
 ## Environment
 
 You can use following codes to create the required environments (may not be inclusive)
